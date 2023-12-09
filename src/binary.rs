@@ -1,73 +1,5 @@
 use mutf8::MString;
-use std::io::{Read, Write};
 use core::array::TryFromSliceError;
-use flate2::read::{GzDecoder, ZlibDecoder};
-use flate2::write::{GzEncoder, ZlibEncoder};
-
-pub const GZIP_MAGIC_NUMBER: [u8; 2] = [0x1F, 0x8B];
-pub const ZLIB_MAGIC_NUMBER: [u8; 1] = [0x78];
-
-pub enum Compression {
-    Uncompressed,
-    GZIP,
-    ZLIB
-}
-
-impl Compression {
-    pub fn decode(&self, buf: Vec<u8>) -> std::io::Result<Vec<u8>> {
-        match self {
-            Compression::Uncompressed => {Ok(buf)}
-            Compression::GZIP => {
-                let mut data = vec![];
-                GzDecoder::new(&buf[..]).read_to_end(&mut data)?;
-                Ok(data)
-            }
-            Compression::ZLIB => {
-                let mut data = vec![];
-                ZlibDecoder::new(&buf[..]).read_to_end(&mut data)?;
-                Ok(data)
-            }
-        }
-    }
-
-    pub fn encode(&self, buf: Vec<u8>) -> std::io::Result<Vec<u8>> {
-        match self {
-            Compression::Uncompressed => {Ok(buf)}
-            Compression::GZIP => {
-                let mut encoder = GzEncoder::new(
-                    Vec::new(),
-                    flate2::Compression::default()
-                );
-                encoder.write_all(&buf)?;
-                Ok(encoder.finish().unwrap().to_vec())
-            }
-            Compression::ZLIB => {
-                let mut encoder = ZlibEncoder::new(
-                    Vec::new(),
-                    flate2::Compression::default()
-                );
-                encoder.write_all(&buf)?;
-                Ok(encoder.finish().unwrap().to_vec())
-            }
-        }
-    }
-
-    pub fn as_str(&self) -> &str {
-        match &self {
-            Compression::Uncompressed => {"uncompressed"}
-            Compression::GZIP => {"gzip"}
-            Compression::ZLIB => {"zlib"}
-        }
-    }
-
-    pub fn magic_number(&self) -> &[u8] {
-        match &self {
-            Compression::Uncompressed => {&[]}
-            Compression::GZIP => {&GZIP_MAGIC_NUMBER}
-            Compression::ZLIB => {&ZLIB_MAGIC_NUMBER}
-        }
-    }
-}
 
 pub type BinResult<T> = std::result::Result<T, BinError>;
 
@@ -78,20 +10,24 @@ pub enum BinError {
 }
 
 pub trait Writer {
-    fn write_be(&self, fw: &mut FileWriter);
-    fn write_le(&self, fw: &mut FileWriter);
+    fn write(&self, fw: &mut impl FileWriter);
 }
 
 pub trait Io: Writer {
-    fn read_be(fr: &mut FileReader) -> BinResult<Self> where Self: Sized;
-    fn read_le(fr: &mut FileReader) -> BinResult<Self> where Self: Sized;
+    fn read(fr: &mut impl FileReader) -> BinResult<Self> where Self: Sized;
 }
 
-#[macro_export]
-macro_rules! io_static_size {
+pub trait PrimitiveIo: Io {
+    fn primitive_read_be(fr: &mut impl FileReader) -> BinResult<Self> where Self: Sized;
+    fn primitive_read_le(fr: &mut impl FileReader) -> BinResult<Self> where Self: Sized;
+    fn primitive_write_be(&self, fw: &mut impl FileWriter);
+    fn primitive_write_le(&self, fw: &mut impl FileWriter);
+}
+
+macro_rules! io_primitive {
     ($type:tt, $size:literal) => {
-        impl Io for $type {
-            fn read_be(fr: &mut FileReader) -> BinResult<Self> {
+        impl PrimitiveIo for $type {
+            fn primitive_read_be(fr: &mut impl FileReader) -> BinResult<Self> {
                 let bytes = fr.get_slice($size)?;
                 let r: Result<[u8; $size], TryFromSliceError> = bytes.try_into();
                 match r {
@@ -100,7 +36,7 @@ macro_rules! io_static_size {
                 }
             }
 
-            fn read_le(fr: &mut FileReader) -> BinResult<Self> {
+            fn primitive_read_le(fr: &mut impl FileReader) -> BinResult<Self> {
                 let bytes = fr.get_slice($size)?;
                 let r: Result<[u8; $size], TryFromSliceError> = bytes.try_into();
                 match r {
@@ -108,51 +44,51 @@ macro_rules! io_static_size {
                     Ok(x) => Ok(Self::from_le_bytes(x))
                 }
             }
-        }
 
-        impl Writer for $type {
-            fn write_be(&self, fw: &mut FileWriter) {
+            fn primitive_write_be(&self, fw: &mut impl FileWriter) {
                 fw.append(&mut Self::to_be_bytes(*self).to_vec())
             }
         
-            fn write_le(&self, fw: &mut FileWriter) {
+            fn primitive_write_le(&self, fw: &mut impl FileWriter) {
                 fw.append(&mut Self::to_le_bytes(*self).to_vec())
+            }
+        }
+
+        impl Io for $type {
+            fn read(fr: &mut impl FileReader) -> BinResult<Self> {
+                fr.primitive_read()
+            }
+        }
+
+        impl Writer for $type {
+            fn write(&self, fw: &mut impl FileWriter) {
+                fw.primitive_write(self)
             }
         }
     };
 }
 
-io_static_size!(u8, 1);
-io_static_size!(i8, 1);
-io_static_size!(u16, 2);
-io_static_size!(i16, 2);
-io_static_size!(i32, 4);
-io_static_size!(i64, 8);
-io_static_size!(f32, 4);
-io_static_size!(f64, 8);
+io_primitive!(u8, 1);
+io_primitive!(i8, 1);
+io_primitive!(u16, 2);
+io_primitive!(i16, 2);
+io_primitive!(u32, 4);
+io_primitive!(i32, 4);
+io_primitive!(u64, 8);
+io_primitive!(i64, 8);
+io_primitive!(f32, 4);
+io_primitive!(f64, 8);
 
 impl Io for String {
-    fn read_be(fr: &mut FileReader) -> BinResult<Self> where Self: Sized {
-        let len = fr.read_be::<u16>()? as usize;
-        Ok(MString::from_mutf8(fr.get_slice(len)?).to_string())
-    }
-
-    fn read_le(fr: &mut FileReader) -> BinResult<Self> where Self: Sized {
-        let len = fr.read_le::<u16>()? as usize;
+    fn read(fr: &mut impl FileReader) -> BinResult<Self> {
+        let len = fr.read::<u16>()? as usize;
         Ok(MString::from_mutf8(fr.get_slice(len)?).to_string())
     }
 }
 
 impl Writer for String {
-    fn write_be(&self, fw: &mut FileWriter) {
-        fw.write_be(&(self.len() as u16));
-        fw.append(&mut MString::from_utf8(
-            String::as_bytes(self)
-        ).unwrap().as_mutf8_bytes().to_vec());
-    }
-
-    fn write_le(&self, fw: &mut FileWriter) {
-        fw.write_le(&(self.len() as u16));
+    fn write(&self, fw: &mut impl FileWriter) {
+        fw.write(&(self.len() as u16));
         fw.append(&mut MString::from_utf8(
             String::as_bytes(self)
         ).unwrap().as_mutf8_bytes().to_vec());
@@ -161,72 +97,156 @@ impl Writer for String {
 
 
 pub trait TagIo: Writer {
-    fn read_be(tag_id: u8, fr: &mut FileReader) -> BinResult<Self> where Self: Sized;
-    fn read_le(tag_id: u8, fr: &mut FileReader) -> BinResult<Self> where Self: Sized;
+    fn read(tag_id: u8, fr: &mut impl FileReader) -> BinResult<Self> where Self: Sized;
 }
 
-pub struct FileReader<'a> {
-    bytes: &'a Vec<u8>,
-    pos: usize
+pub trait FileReader: PrimitiveFileReader {
+    ///reads a data type in the endianness the file reader is set to
+    fn read<T: Io>(&mut self) -> BinResult<T> where Self: Sized {
+        T::read(self)
+    }
+    ///reads a data type in ``big endian``
+    fn read_be<T: Io>(&mut self) -> BinResult<T> where Self: Sized;
+    ///reads a data type in ``little endian``
+    fn read_le<T: Io>(&mut self) -> BinResult<T> where Self: Sized;
+    fn get_slice(&mut self, len: usize) -> BinResult<&[u8]>;
+    fn rest(&self) -> Vec<u8>;
+    fn at_end(&self) -> bool;
 }
 
-impl<'a> FileReader<'a> {
-    pub fn new(bytes: &Vec<u8>, pos: usize) -> FileReader {
-        FileReader {
-            bytes,
-            pos
+pub trait PrimitiveFileReader {
+    fn primitive_read<T: PrimitiveIo>(&mut self) -> BinResult<T> where Self: Sized;
+    fn primitive_read_be<T: PrimitiveIo>(&mut self) -> BinResult<T> where Self: Sized, Self: FileReader {
+        T::primitive_read_be(self)
+    }
+    fn primitive_read_le<T: PrimitiveIo>(&mut self) -> BinResult<T> where Self: Sized, Self: FileReader {
+        T::primitive_read_le(self)
+    }
+}
+
+macro_rules! file_reader {
+    ($reader:ident, $endian:ident, $reader_inverse:ident, $endian_inverse:ident, $endian_primitive:ident) => {
+        pub struct $reader<'a> {
+            bytes: &'a Vec<u8>,
+            pos: usize
+        }
+        
+        impl<'a> $reader<'a> {
+            pub fn new(bytes: &'a Vec<u8>, pos: usize) -> Self {
+                Self {
+                    bytes,
+                    pos
+                }
+            }
+        }
+
+        impl<'a> PrimitiveFileReader for $reader<'a> {
+            fn primitive_read<T: PrimitiveIo>(&mut self) -> BinResult<T> {
+                T::$endian_primitive(self)
+            }
+        }
+        
+        impl<'a> FileReader for $reader<'a> {
+            fn $endian<T: Io>(&mut self) -> BinResult<T> {
+                T::read(self)
+            }
+
+            fn $endian_inverse<T: Io>(&mut self) -> BinResult<T> {
+                let mut inverse = $reader_inverse::new(self.bytes, self.pos);
+                let r = T::read(&mut inverse);
+                self.pos = inverse.pos;
+                r
+            }
+        
+            fn get_slice(&mut self, len: usize) -> Result<&[u8], BinError> {
+                self.pos += len;
+                if self.pos > self.bytes.len() {
+                    return Err(BinError::UnexpectedEndOfByteStream)
+                }
+                Ok(&self.bytes[self.pos-len..self.pos])
+            }
+        
+            fn rest(&self) -> Vec<u8> {
+                self.bytes[self.pos..].to_owned()
+            }
+        
+            fn at_end(&self) -> bool {
+                self.pos == self.bytes.len()
+            }
         }
     }
+}
 
-    pub fn read_be<T: Io>(&mut self) -> BinResult<T> {
-        T::read_be(self)
+file_reader!(FileReaderBE, read_be, FileReaderLE, read_le, primitive_read_be);
+file_reader!(FileReaderLE, read_le, FileReaderBE, read_be, primitive_read_le);
+
+pub trait FileWriter: PrimitiveFileWriter {
+    fn write<T: Writer>(&mut self, v: &T) where Self: Sized {
+        v.write(self);
     }
 
-    pub fn read_le<T: Io>(&mut self) -> BinResult<T> {
-        T::read_le(self)
+    fn write_be<T: Writer>(&mut self, v: &T);
+
+    fn write_le<T: Writer>(&mut self, v: &T);
+
+    fn append(&mut self, bytes: &mut Vec::<u8>);
+
+    fn bytes(self) -> Vec<u8>;
+}
+
+pub trait PrimitiveFileWriter {
+    fn primitive_write<T: PrimitiveIo>(&mut self, v: &T);
+
+    fn primitive_write_be<T: PrimitiveIo>(&mut self, v: &T) where Self: Sized, Self: FileWriter {
+        v.primitive_write_be(self);
     }
 
-    pub fn get_slice(&mut self, len: usize) -> Result<&[u8], BinError> {
-        self.pos += len;
-        if self.pos > self.bytes.len() {
-            return Err(BinError::UnexpectedEndOfByteStream)
+    fn primitive_write_le<T: PrimitiveIo>(&mut self, v: &T) where Self: Sized, Self: FileWriter {
+        v.primitive_write_le(self);
+    }
+}
+
+macro_rules! file_writer {
+    ($writer:ident, $endian:ident, $writer_inverse:ident, $endian_inverse:ident, $endian_primitive:ident) => {
+        pub struct $writer {
+            bytes: Vec<u8>
         }
-        Ok(&self.bytes[self.pos-len..self.pos])
-    }
 
-    pub fn rest(&self) -> Vec<u8> {
-        self.bytes[self.pos..].to_owned()
-    }
+        impl $writer {
+            pub fn new() -> Self {
+                Self {
+                    bytes: Vec::<u8>::new()
+                }
+            }
+        }
 
-    pub fn at_end(&self) -> bool {
-        self.pos == self.bytes.len()
-    }
-}
+        impl PrimitiveFileWriter for $writer {
+            fn primitive_write<T: PrimitiveIo>(&mut self, v: &T) {
+                v.$endian_primitive(self);
+            }
+        }
 
-pub struct FileWriter {
-    bytes: Vec<u8>
-}
+        impl FileWriter for $writer {
+            fn $endian<T: Writer>(&mut self, v: &T) {
+                v.write(self)
+            }
 
-impl FileWriter {
-    pub fn new() -> FileWriter {
-        FileWriter {
-            bytes: Vec::<u8>::new()
+            fn $endian_inverse<T: Writer>(&mut self, v: &T) {
+                let mut inverse = $writer_inverse::new();
+                v.write(&mut inverse);
+                self.append(&mut inverse.bytes);
+            }
+        
+            fn append(&mut self, bytes: &mut Vec::<u8>) {
+                self.bytes.append(bytes);
+            }
+        
+            fn bytes(self) -> Vec<u8> {
+                self.bytes
+            }
         }
     }
-
-    pub fn write_be<T: Writer>(&mut self, v: &T) {
-        v.write_be(self);
-    }
-
-    pub fn write_le<T: Writer>(&mut self, v: &T) {
-        v.write_le(self);
-    }
-
-    pub fn append(&mut self, bytes: &mut Vec::<u8>) {
-        self.bytes.append(bytes);
-    }
-
-    pub fn bytes(self) -> Vec<u8> {
-        self.bytes
-    }
 }
+
+file_writer!(FileWriterBE, write_be, FileWriterLE, write_le, primitive_write_be);
+file_writer!(FileWriterLE, write_le, FileWriterBE, write_be, primitive_write_le);
