@@ -6,7 +6,8 @@ pub type BinResult<T> = std::result::Result<T, BinError>;
 #[derive(Debug)]
 pub enum BinError {
     UnexpectedEndOfByteStream,
-    Parse(TryFromSliceError),
+    ParsingPrimitive(TryFromSliceError),
+    Parsing(String),
 }
 
 pub trait Writer {
@@ -31,7 +32,7 @@ macro_rules! io_primitive {
                 let bytes = fr.get_slice($size)?;
                 let r: Result<[u8; $size], TryFromSliceError> = bytes.try_into();
                 match r {
-                    Err(e) => Err(BinError::Parse(e)),
+                    Err(e) => Err(BinError::ParsingPrimitive(e)),
                     Ok(x) => Ok(Self::from_be_bytes(x))
                 }
             }
@@ -40,7 +41,7 @@ macro_rules! io_primitive {
                 let bytes = fr.get_slice($size)?;
                 let r: Result<[u8; $size], TryFromSliceError> = bytes.try_into();
                 match r {
-                    Err(e) => Err(BinError::Parse(e)),
+                    Err(e) => Err(BinError::ParsingPrimitive(e)),
                     Ok(x) => Ok(Self::from_le_bytes(x))
                 }
             }
