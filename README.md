@@ -12,7 +12,7 @@
 Add the following line to your `Cargo.toml` file:
 ```toml
 [dependencies]
-mm_io = "0.3.0"
+mm_io = "0.4.0"
 ```
 
 <!--#### Reading NBT files
