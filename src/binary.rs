@@ -1,12 +1,16 @@
 use core::array::TryFromSliceError;
 use mutf8::MString;
+use thiserror::Error;
 
 pub type BinResult<T> = std::result::Result<T, BinError>;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum BinError {
+    #[error("Unexpected end of byte stream")]
     UnexpectedEndOfByteStream,
-    ParsingPrimitive(TryFromSliceError),
+    #[error(transparent)]
+    ParsingPrimitive(#[from] TryFromSliceError),
+    #[error("Parsing failed")]
     Parsing(String),
 }
 

@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 flate2 = "1.0"
 mutf8 = "0.5"
+thiserror = "1.0.50"
