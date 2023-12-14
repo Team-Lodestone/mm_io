@@ -12,12 +12,10 @@ mod tests {
 
     #[test]
     fn read_u8() {
-        {
-            let x = &vec![0x01];
-            let mut fr = bin::FileReaderBE::new(x, 0);
-            let byte = fr.read::<u8>().unwrap();
-            assert_eq!(byte, 0x01);
-        }
+        let x = &vec![0x01];
+        let mut fr = bin::FileReaderBE::new(x, 0);
+        let byte = fr.read::<u8>().unwrap();
+        assert_eq!(byte, 0x01);
     }
 
     #[test]
@@ -96,27 +94,25 @@ mod tests {
 
     #[test]
     fn read_le_short_tag() {
-        {
-            //---payloads---//
-            let x = &vec![0x00, 0x04, 0x01, 0x05, 0x02, 0x06, 0x03, 0x07];
-            let tag_id = 0x02;
-            let mut fr = bin::FileReaderLE::new(x, 0);
-            assert_eq!(
-                nbt::Tag::read(tag_id, &mut fr).unwrap(),
-                nbt::Tag::Short(0x0400)
-            );
-            assert_eq!(
-                nbt::Tag::read(tag_id, &mut fr).unwrap(),
-                nbt::Tag::Short(0x0501)
-            );
-            assert_eq!(
-                nbt::Tag::read(tag_id, &mut fr).unwrap(),
-                nbt::Tag::Short(0x0602)
-            );
-            assert_eq!(
-                nbt::Tag::read(tag_id, &mut fr).unwrap(),
-                nbt::Tag::Short(0x0703)
-            );
-        }
+        //---payloads---//
+        let x = &vec![0x00, 0x04, 0x01, 0x05, 0x02, 0x06, 0x03, 0x07];
+        let tag_id = 0x02;
+        let mut fr = bin::FileReaderLE::new(x, 0);
+        assert_eq!(
+            nbt::Tag::read(tag_id, &mut fr).unwrap(),
+            nbt::Tag::Short(0x0400)
+        );
+        assert_eq!(
+            nbt::Tag::read(tag_id, &mut fr).unwrap(),
+            nbt::Tag::Short(0x0501)
+        );
+        assert_eq!(
+            nbt::Tag::read(tag_id, &mut fr).unwrap(),
+            nbt::Tag::Short(0x0602)
+        );
+        assert_eq!(
+            nbt::Tag::read(tag_id, &mut fr).unwrap(),
+            nbt::Tag::Short(0x0703)
+        );
     }
 }
