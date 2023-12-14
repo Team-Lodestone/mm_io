@@ -173,6 +173,7 @@ macro_rules! write_array_list {
         $fw.write(&($v.len() as i32));
         for i in 0..$v.len() {
             let w = &$v[i];
+            $fw.write(&(w.len() as i32));
             for j in 0..w.len() {
                 $fw.write(&w[j]);
             }
