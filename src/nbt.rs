@@ -1,12 +1,5 @@
-use crate::binary::{
-    FileReader,
-    FileWriter,
-    TagIo,
-    Writer,
-    BinResult,
-    BinError
-};
-use std::{fmt::Debug, collections::HashMap};
+use crate::binary::{BinError, BinResult, FileReader, FileWriter, TagIo, Writer};
+use std::{collections::HashMap, fmt::Debug};
 
 #[repr(u8)]
 #[derive(Clone, PartialEq, Debug)]
@@ -44,18 +37,18 @@ pub enum List {
 impl Tag {
     fn tag_id(&self) -> u8 {
         match self {
-            Tag::Byte(_) => {0x01}
-            Tag::Short(_) => {0x02}
-            Tag::Int(_) => {0x03}
-            Tag::Long(_) => {0x04}
-            Tag::Float(_) => {0x05}
-            Tag::Double(_) => {0x06}
-            Tag::ByteArray(_) => {0x07}
-            Tag::String(_) => {0x08}
-            Tag::List(_) => {0x09}
-            Tag::Compound(_) => {0x0A}
-            Tag::IntArray(_) => {0x0B}
-            Tag::LongArray(_) => {0x0C}
+            Tag::Byte(_) => 0x01,
+            Tag::Short(_) => 0x02,
+            Tag::Int(_) => 0x03,
+            Tag::Long(_) => 0x04,
+            Tag::Float(_) => 0x05,
+            Tag::Double(_) => 0x06,
+            Tag::ByteArray(_) => 0x07,
+            Tag::String(_) => 0x08,
+            Tag::List(_) => 0x09,
+            Tag::Compound(_) => 0x0A,
+            Tag::IntArray(_) => 0x0B,
+            Tag::LongArray(_) => 0x0C,
         }
     }
 
@@ -68,34 +61,30 @@ impl Tag {
 }
 
 macro_rules! read_array {
-    ($fr:expr) => {
-        {
-            let len: i32 = $fr.read()?;
-            let mut array = Vec::new();
-            for _ in 0..len {
-                array.push($fr.read()?);
-            }
-            array
+    ($fr:expr) => {{
+        let len: i32 = $fr.read()?;
+        let mut array = Vec::new();
+        for _ in 0..len {
+            array.push($fr.read()?);
         }
-    };
+        array
+    }};
 }
 
 macro_rules! read_2d_array {
-    ($fr:expr) => {
-        {
-            let len: i32 = $fr.read()?;
-            let mut array = Vec::new();
-            for _ in 0..len {
-                let len_: i32 = $fr.read()?;
-                let mut array_ = Vec::new();
-                for _ in 0..len_ {
-                    array_.push($fr.read()?);
-                }
-                array.push(array_);
+    ($fr:expr) => {{
+        let len: i32 = $fr.read()?;
+        let mut array = Vec::new();
+        for _ in 0..len {
+            let len_: i32 = $fr.read()?;
+            let mut array_ = Vec::new();
+            for _ in 0..len_ {
+                array_.push($fr.read()?);
             }
-            array
+            array.push(array_);
         }
-    };
+        array
+    }};
 }
 
 fn read_list(list_id: u8, fr: &mut impl FileReader) -> BinResult<List> {
@@ -115,7 +104,7 @@ fn read_list(list_id: u8, fr: &mut impl FileReader) -> BinResult<List> {
                 array.push(read_list(fr.read()?, fr)?);
             }
             Ok(List::List(array))
-        },
+        }
         0x0A => {
             let len: i32 = fr.read()?;
             let mut array = Vec::new();
@@ -123,14 +112,14 @@ fn read_list(list_id: u8, fr: &mut impl FileReader) -> BinResult<List> {
                 array.push(read_compound(fr)?);
             }
             Ok(List::Compound(array))
-        },
+        }
         0x0B => Ok(List::IntArray(read_2d_array!(fr))),
         0x0C => Ok(List::LongArray(read_2d_array!(fr))),
-        x => Err(BinError::Parsing(format!("Invalid Tag ID: {}", x)))
+        x => Err(BinError::Parsing(format!("Invalid Tag ID: {}", x))),
     }
 }
 
-fn read_compound(fr: &mut impl FileReader) -> BinResult<HashMap::<String, Tag>> {
+fn read_compound(fr: &mut impl FileReader) -> BinResult<HashMap<String, Tag>> {
     let mut buf = HashMap::<String, Tag>::new();
     while !fr.at_end() {
         let tag_id: u8 = fr.read()?;
@@ -157,44 +146,38 @@ impl TagIo for Tag {
             0x0A => Ok(Tag::Compound(read_compound(fr)?)),
             0x0B => Ok(Tag::IntArray(read_array!(fr))),
             0x0C => Ok(Tag::LongArray(read_array!(fr))),
-            x => Err(BinError::Parsing(format!("Invalid Tag ID: {}", x)))
+            x => Err(BinError::Parsing(format!("Invalid Tag ID: {}", x))),
         }
     }
 }
 
 macro_rules! write_array {
-    ($v:expr, $fw:expr) => {
-        {
-            $fw.write(&($v.len() as i32));
-            for i in 0..$v.len() {
-                $fw.write(&$v[i]);
-            }
+    ($v:expr, $fw:expr) => {{
+        $fw.write(&($v.len() as i32));
+        for i in 0..$v.len() {
+            $fw.write(&$v[i]);
         }
-    };
+    }};
 }
 
 macro_rules! write_list {
-    ($id:literal, $v:expr, $fw:expr) => {
-        {
-            $fw.write(&$id);
-            write_array!($v, $fw);
-        }
-    };
+    ($id:literal, $v:expr, $fw:expr) => {{
+        $fw.write(&$id);
+        write_array!($v, $fw);
+    }};
 }
 
 macro_rules! write_array_list {
-    ($id:literal, $v:expr, $fw:expr) => {
-        {
-            $fw.write(&$id);
-            $fw.write(&($v.len() as i32));
-            for i in 0..$v.len() {
-                let w = &$v[i];
-                for j in 0..w.len() {
-                    $fw.write(&w[j]);
-                }
+    ($id:literal, $v:expr, $fw:expr) => {{
+        $fw.write(&$id);
+        $fw.write(&($v.len() as i32));
+        for i in 0..$v.len() {
+            let w = &$v[i];
+            for j in 0..w.len() {
+                $fw.write(&w[j]);
             }
         }
-    };
+    }};
 }
 
 impl Writer for Tag {
