@@ -20,6 +20,7 @@ pub enum Tag {
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum List {
+    Empty,
     Byte(Vec<i8>),
     Short(Vec<i16>),
     Int(Vec<i32>),
@@ -32,6 +33,26 @@ pub enum List {
     Compound(Vec<HashMap<String, Tag>>),
     IntArray(Vec<Vec<i32>>),
     LongArray(Vec<Vec<i64>>),
+}
+
+impl List {
+    pub fn len(&self) -> usize {
+        match self {
+            List::Empty => 0,
+            List::Byte(list) => list.len(),
+            List::Short(list) => list.len(),
+            List::Int(list) => list.len(),
+            List::Long(list) => list.len(),
+            List::Float(list) => list.len(),
+            List::Double(list) => list.len(),
+            List::ByteArray(list) => list.len(),
+            List::String(list) => list.len(),
+            List::List(list) => list.len(),
+            List::Compound(list) => list.len(),
+            List::IntArray(list) => list.len(),
+            List::LongArray(list) => list.len(),
+        }
+    }
 }
 
 impl Tag {
@@ -71,11 +92,20 @@ macro_rules! read_array {
     }};
 }
 
-macro_rules! read_2d_array {
-    ($fr:expr) => {{
-        let len: i32 = $fr.read()?;
+macro_rules! read_list {
+    ($len:expr, $fr:expr) => {{
         let mut array = Vec::new();
-        for _ in 0..len {
+        for _ in 0..$len {
+            array.push($fr.read()?);
+        }
+        array
+    }};
+}
+
+macro_rules! read_list_array {
+    ($len:expr, $fr:expr) => {{
+        let mut array = Vec::new();
+        for _ in 0..$len {
             let len_: i32 = $fr.read()?;
             let mut array_ = Vec::new();
             for _ in 0..len_ {
@@ -88,15 +118,27 @@ macro_rules! read_2d_array {
 }
 
 fn read_list(list_id: u8, fr: &mut impl FileReader) -> BinResult<List> {
+    let len : i32 = fr.read()?;
+    if len <= 0 {
+        return Ok(List::Empty)
+    }
     match list_id {
-        0x01 => Ok(List::Byte(read_array!(fr))),
-        0x02 => Ok(List::Short(read_array!(fr))),
-        0x03 => Ok(List::Int(read_array!(fr))),
-        0x04 => Ok(List::Long(read_array!(fr))),
-        0x05 => Ok(List::Float(read_array!(fr))),
-        0x06 => Ok(List::Double(read_array!(fr))),
-        0x07 => Ok(List::ByteArray(read_2d_array!(fr))),
-        0x08 => Ok(List::String(read_array!(fr))),
+        0x00 => {
+            if len > 0 {
+                return Err(BinError::Parsing(
+                        r#"Lists of type "Tag End" can't have a length greater than 0"#.to_string()
+                ))
+            }
+            Ok(List::Empty)
+        },
+        0x01 => Ok(List::Byte(read_list!(len, fr))),
+        0x02 => Ok(List::Short(read_list!(len, fr))),
+        0x03 => Ok(List::Int(read_list!(len, fr))),
+        0x04 => Ok(List::Long(read_list!(len, fr))),
+        0x05 => Ok(List::Float(read_list!(len, fr))),
+        0x06 => Ok(List::Double(read_list!(len, fr))),
+        0x07 => Ok(List::ByteArray(read_list_array!(len, fr))),
+        0x08 => Ok(List::String(read_list!(len, fr))),
         0x09 => {
             let len: i32 = fr.read()?;
             let mut array = Vec::new();
@@ -113,8 +155,8 @@ fn read_list(list_id: u8, fr: &mut impl FileReader) -> BinResult<List> {
             }
             Ok(List::Compound(array))
         }
-        0x0B => Ok(List::IntArray(read_2d_array!(fr))),
-        0x0C => Ok(List::LongArray(read_2d_array!(fr))),
+        0x0B => Ok(List::IntArray(read_list_array!(len, fr))),
+        0x0C => Ok(List::LongArray(read_list_array!(len, fr))),
         x => Err(BinError::Parsing(format!("Invalid Tag ID: {}", x))),
     }
 }
@@ -209,31 +251,37 @@ impl Writer for Tag {
 
 impl Writer for List {
     fn write(&self, fw: &mut impl FileWriter) {
-        match self {
-            List::Byte(arr) => write_list!(0x01, arr, fw),
-            List::Short(arr) => write_list!(0x02, arr, fw),
-            List::Int(arr) => write_list!(0x03, arr, fw),
-            List::Long(arr) => write_list!(0x04, arr, fw),
-            List::Float(arr) => write_list!(0x05, arr, fw),
-            List::Double(arr) => write_list!(0x06, arr, fw),
-            List::ByteArray(arr) => write_array_list!(0x07, arr, fw),
-            List::String(arr) => write_list!(0x08, arr, fw),
-            List::List(arr) => write_list!(0x09, arr, fw),
-            List::Compound(arr) => {
-                fw.write::<u8>(&0x0A);
-                fw.write(&(arr.len() as i32));
-                for i in 0..arr.len() {
-                    let map = &arr[i];
-                    for (k, v) in map.iter() {
-                        fw.write(&v.tag_id());
-                        fw.write(k);
-                        fw.write(v);
+        // use tag id `0x00` if length is 0
+        if self.len() == 0 {
+            fw.append(&mut vec![0x00; 5])
+        } else {
+            match self {
+                List::Empty => fw.append(&mut vec![0x00; 5]),
+                List::Byte(arr) => write_list!(0x01, arr, fw),
+                List::Short(arr) => write_list!(0x02, arr, fw),
+                List::Int(arr) => write_list!(0x03, arr, fw),
+                List::Long(arr) => write_list!(0x04, arr, fw),
+                List::Float(arr) => write_list!(0x05, arr, fw),
+                List::Double(arr) => write_list!(0x06, arr, fw),
+                List::ByteArray(arr) => write_array_list!(0x07, arr, fw),
+                List::String(arr) => write_list!(0x08, arr, fw),
+                List::List(arr) => write_list!(0x09, arr, fw),
+                List::Compound(arr) => {
+                    fw.write::<u8>(&0x0A);
+                    fw.write(&(arr.len() as i32));
+                    for i in 0..arr.len() {
+                        let map = &arr[i];
+                        for (k, v) in map.iter() {
+                            fw.write(&v.tag_id());
+                            fw.write(k);
+                            fw.write(v);
+                        }
+                        fw.write::<u8>(&0x00);
                     }
-                    fw.write::<u8>(&0x00);
                 }
+                List::IntArray(arr) => write_array_list!(0x0B, arr, fw),
+                List::LongArray(arr) => write_array_list!(0x0B, arr, fw),
             }
-            List::IntArray(arr) => write_array_list!(0x0B, arr, fw),
-            List::LongArray(arr) => write_array_list!(0x0B, arr, fw),
         }
     }
 }
