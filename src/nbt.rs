@@ -276,7 +276,7 @@ impl Writer for List {
                     for (k, v) in map.iter() {
                         fw.write(&v.tag_id());
                         fw.write(k);
-                        fw.write(v);
+                        write_tag(v, fw, true);
                     }
                     fw.write::<u8>(&0x00);
                 }
