@@ -225,63 +225,64 @@ macro_rules! write_array_list {
 
 impl Writer for Tag {
     fn write(&self, fw: &mut impl FileWriter) {
-        match self {
-            Tag::Byte(v) => fw.write(v),
-            Tag::Short(v) => fw.write(v),
-            Tag::Int(v) => fw.write(v),
-            Tag::Long(v) => fw.write(v),
-            Tag::Float(v) => fw.write(v),
-            Tag::Double(v) => fw.write(v),
-            Tag::ByteArray(v) => write_array!(v, fw),
-            Tag::String(v) => fw.write(v),
-            Tag::List(v) => fw.write(v),
-            Tag::Compound(map) => {
-                for (k, v) in map.iter() {
-                    fw.write(&v.tag_id());
-                    fw.write(k);
-                    fw.write(v);
-                }
+        write_tag(self, fw, false)
+    }
+}
+
+fn write_tag(tag: &Tag, fw: &mut impl FileWriter, end: bool) {
+    match tag {
+        Tag::Byte(v) => fw.write(v),
+        Tag::Short(v) => fw.write(v),
+        Tag::Int(v) => fw.write(v),
+        Tag::Long(v) => fw.write(v),
+        Tag::Float(v) => fw.write(v),
+        Tag::Double(v) => fw.write(v),
+        Tag::ByteArray(v) => write_array!(v, fw),
+        Tag::String(v) => fw.write(v),
+        Tag::List(v) => fw.write(v),
+        Tag::Compound(map) => {
+            for (k, v) in map.iter() {
+                fw.write(&v.tag_id());
+                fw.write(k);
+                write_tag(v, fw, true);
+            }
+            if end {
                 fw.write::<u8>(&0x00);
             }
-            Tag::IntArray(v) => write_array!(v, fw),
-            Tag::LongArray(v) => write_array!(v, fw),
         }
+        Tag::IntArray(v) => write_array!(v, fw),
+        Tag::LongArray(v) => write_array!(v, fw),
     }
 }
 
 impl Writer for List {
     fn write(&self, fw: &mut impl FileWriter) {
-        // use tag id `0x00` if length is 0
-        if self.len() == 0 {
-            fw.append(&mut vec![0x00; 5])
-        } else {
-            match self {
-                List::Empty => fw.append(&mut vec![0x00; 5]),
-                List::Byte(arr) => write_list!(0x01, arr, fw),
-                List::Short(arr) => write_list!(0x02, arr, fw),
-                List::Int(arr) => write_list!(0x03, arr, fw),
-                List::Long(arr) => write_list!(0x04, arr, fw),
-                List::Float(arr) => write_list!(0x05, arr, fw),
-                List::Double(arr) => write_list!(0x06, arr, fw),
-                List::ByteArray(arr) => write_array_list!(0x07, arr, fw),
-                List::String(arr) => write_list!(0x08, arr, fw),
-                List::List(arr) => write_list!(0x09, arr, fw),
-                List::Compound(arr) => {
-                    fw.write::<u8>(&0x0A);
-                    fw.write(&(arr.len() as i32));
-                    for i in 0..arr.len() {
-                        let map = &arr[i];
-                        for (k, v) in map.iter() {
-                            fw.write(&v.tag_id());
-                            fw.write(k);
-                            fw.write(v);
-                        }
-                        fw.write::<u8>(&0x00);
+        match self {
+            List::Empty => fw.append(&mut vec![0x00; 5]),
+            List::Byte(arr) => write_list!(0x01, arr, fw),
+            List::Short(arr) => write_list!(0x02, arr, fw),
+            List::Int(arr) => write_list!(0x03, arr, fw),
+            List::Long(arr) => write_list!(0x04, arr, fw),
+            List::Float(arr) => write_list!(0x05, arr, fw),
+            List::Double(arr) => write_list!(0x06, arr, fw),
+            List::ByteArray(arr) => write_array_list!(0x07, arr, fw),
+            List::String(arr) => write_list!(0x08, arr, fw),
+            List::List(arr) => write_list!(0x09, arr, fw),
+            List::Compound(arr) => {
+                fw.write::<u8>(&0x0A);
+                fw.write(&(arr.len() as i32));
+                for i in 0..arr.len() {
+                    let map = &arr[i];
+                    for (k, v) in map.iter() {
+                        fw.write(&v.tag_id());
+                        fw.write(k);
+                        fw.write(v);
                     }
+                    fw.write::<u8>(&0x00);
                 }
-                List::IntArray(arr) => write_array_list!(0x0B, arr, fw),
-                List::LongArray(arr) => write_array_list!(0x0B, arr, fw),
             }
+            List::IntArray(arr) => write_array_list!(0x0B, arr, fw),
+            List::LongArray(arr) => write_array_list!(0x0B, arr, fw),
         }
     }
 }
