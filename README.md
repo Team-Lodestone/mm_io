@@ -39,4 +39,4 @@ Contributions are welcome! If you encounter any issues, have feature requests, o
 4. Setup a pull request from your fork to the main repository
 
 ### License
-This crate is dual-licensed under the terms of the [MIT](https://github.com/Minecraft-Manipulator/mm-io/blob/main/LICENSE-MIT) and [Apache](https://github.com/Minecraft-Manipulator/mm-io/blob/main/LICENSE-APACHE) licenses. See the respective license files for more details.
+This crate is dual-licensed under the terms of the [MIT](https://github.com/Team-Lodestone/mm-io/blob/main/LICENSE-MIT) and [Apache](https://github.com/Team-Lodestone/mm-io/blob/main/LICENSE-APACHE) licenses. See the respective license files for more details.
